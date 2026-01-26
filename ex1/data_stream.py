@@ -1,5 +1,6 @@
 from typing import Any, List, Dict, Union, Optional, Generator
 from abc import ABC, abstractmethod
+from unittest import result
 
 
 class DataStream(ABC):
@@ -10,6 +11,7 @@ class DataStream(ABC):
     def __init__(self, stream_id: str):
         self.stream_id = stream_id
         self.data_type = "Generic Data"
+        self.processed_data: List[Any] = []
 
     @abstractmethod
     def process_batch(self, data_batch: List[Any]) -> str:
@@ -19,22 +21,15 @@ class DataStream(ABC):
         self, data_batch: List[Any], criteria: Optional[str] = None
     ) -> List[Any]:
         # Filter default implementations
-        if criteria != self.data_type:
-            print(f"Wrong data_format send for {self.data_type}")
-            return
+        return data_batch
 
     def get_stats(self) -> Dict[str, Union[str, int, float]]:
-        # Stats default implementations
-        # Initializing Sensor Stream...
-        # Stream ID: SENSOR_001, Type: Environmental Data
-        # Processing sensor batch: [temp:22.5, humidity:65, pressure:1013]
-        # Sensor analysis: 3 readings processed, avg temp: 22.5°C
         return {
             "Stream": self.__class__.__name__,
             "ID": self.stream_id,
             "Type": self.data_type,
-            "data_batch": self.processed_batch,
-            "total_op": self.total_op,
+            "data_batch": self.processed_data,
+            "total_op": len(self.processed_data),
         }
 
 
@@ -58,18 +53,23 @@ class SensorStream(DataStream):
     def __init__(self, stream_id):
         super().__init__(stream_id)
         self.data_type = "Environmental Data"
-        self.nb_reading = 0
-        self.temps = []
+        self.processed_data: Dict[str, float] = []
+        self.registered_temps: List[float] = []
 
     def process_batch(self, data_batch: List[Dict] | Dict) -> str:
-        new_temps = [d["temp"] for d in data_batch if "temp" in d]
-        self.temps.append(new_temps)
-
+        for data in data_batch:
+            if "temp" in data:
+                self.registered_temps.append(data["temp"])
+                self.processed_data.append(data["temp"])
+            if "humidity" in data:
+                self.processed_data.append(data["humidity"])
+            if "pressure" in data:
+                self.processed_data.append(data["pressure"])
+            if "entropy" in data:
+                self.processed_data.append(data["entropy"])
         return (
-            f"Stream ID: {self.stream_id}, Type: {self.data_type}"
-            f"Processing event batch: {data_batch}"
-            f"Sensor analysis: {self.nb_reading} readings processed, "
-            f"avg temp: {self.avg_temp()}°C"
+            f"Sensor analysis: {len(self.processed_data)} "
+            f"readings processed, avg temp: {self.avg_temp():.1f}°C"
         )
 
     def filter_data(
@@ -77,22 +77,25 @@ class SensorStream(DataStream):
         data_batch: List[Dict] | Dict,
         criteria: Optional[str] = "critical",
     ) -> List[Dict] | Dict:
-        # filter only critical sensor alerts
-        super().filter_data(data_batch, criteria)
+        # Returns only critical sensor alerts
         return [
             d
             for d in data_batch
-            if d.get("temp", 0) < 0 or d.get("temp", 0) > 35
+            if d.get("temp", 0) < 0
+            or d.get("temp", 0) > 35
+            or d.get("humidity", 100) > 80
+            or d.get("pressure", 0) < 980
+            or d.get("pressure", 0) > 1020
+            or d.get("entropy", 0) > 4.0
         ]
 
     def avg_temp(self) -> float:
-        return sum(enumerate(self.temps)) / len(self.temps)
+        if not self.registered_temps:
+            return 0.0
+        return sum(self.registered_temps) / len(self.registered_temps)
 
     def get_stats(self) -> Dict[str, Union[str, int, float]]:
-        return {
-            "Sensor analysis": f"{self.nb_reading} readings processed, "
-            "avg temp: {self.avg_temp()}°C"
-        }
+        return super().get_stats(processed_data=self.temps)
 
 
 class TransactionStream(DataStream):
@@ -101,18 +104,14 @@ class TransactionStream(DataStream):
     def __init__(self, stream_id):
         super().__init__(stream_id)
         self.data_type = "Financial Data"
-        self.operations_count = 0
-        self.netflow = 0
+        self.processed_operations = []
 
     def process_batch(self, data_batch: List[int]) -> str:
-        data_batch_sum = sum(data_batch)
-        self.operations_count += len(data_batch)
-        self.netflow += data_batch_sum
+        for data in data_batch:
+            self.processed_operations.append(data)
         return (
-            f"Stream ID: {self.stream_id}, Type: {self.data_type}"
-            f"Processing event batch: {data_batch}"
-            f"Transaction analysis: {self.operations_count} operations, "
-            f"net flow: {self.netflow} units"
+            f"Transaction analysis: {len(self.processed_operations)} "
+            f"operations processed, net flow: {self.netflow()}"
         )
 
     def filter_data(
@@ -122,7 +121,10 @@ class TransactionStream(DataStream):
         return [d for d in data_batch if abs(d) > 1000]
 
     def get_stats(self) -> Dict[str, Union[str, int, float]]:
-        pass
+        return super().get_stats(processed_data=self.processed_operations)
+
+    def netflow(self) -> int:
+        return sum(self.processed_operations)
 
 
 class EventStream(DataStream):
@@ -131,12 +133,18 @@ class EventStream(DataStream):
     def __init__(self, stream_id):
         super().__init__(stream_id)
         self.data_type = "System Events"
-        self.events_count = 0
-        self.errors = 0
+        self.events_processed = []
+        self.errors = []
 
-    def process_batch(self, data_batch: List[str]) -> Generator:
-        # TODO create a generator of the usefull data?
-        pass
+    def process_batch(self, data_batch: List[str]) -> str:
+        for data in data_batch:
+            self.events_processed.append(data)
+            if "error" in data.lower():
+                self.errors.append(data)
+        return (
+            f"Event analysis: {len(self.events_processed)} events, "
+            f"{len(self.errors)} errors detected"
+        )
 
     def filter_data(
         self, data_batch: List[str], criteria: Optional[str] = "error"
@@ -145,19 +153,13 @@ class EventStream(DataStream):
         return [d for d in data_batch if "error" in d.lower()]
 
     def get_stats(self) -> Dict[str, Union[str, int, float]]:
-        pass
+        return super().get_stats(processed_batch=self.events_processed)
 
 
 class StreamProcessor:
     """
     Dispatch the data batch into the different streams depending on the format
     """
-
-    def __init__(self):
-        self.sensor_processed = 0
-        self.transaction_processed = 0
-        self.event_processed = 0
-
     def process_multiple_streams(self, data: List[Any]):
         for batch in data:
             self.process_any_stream(batch)
@@ -182,17 +184,24 @@ class StreamProcessor:
         )
 
     def process_any_stream(self, data_batch: List[Any]) -> None:
-        if isinstance(data_batch, Dict | List[Dict]):
+        if isinstance(data_batch, dict) or (
+            isinstance(data_batch, list)
+            and all(isinstance(d, dict) for d in data_batch)
+        ):
             self.sensor_processed += 1
             stream_id = f"SENSOR-{self.sensor_processed}"
             SensorStream(stream_id).process_batch(data_batch)
 
-        elif isinstance(data_batch, List[int]):
+        elif isinstance(data_batch, list) and all(
+            isinstance(d, int) for d in data_batch
+        ):
             self.transaction_processed += 1
             stream_id = f"TRANS-{self.transaction_processed}"
             TransactionStream(stream_id).process_batch(data_batch)
 
-        elif isinstance(data_batch, List[str]):
+        elif isinstance(data_batch, list) and all(
+            isinstance(d, str) for d in data_batch
+        ):
             self.event_processed += 1
             stream_id = f"EVENT-{self.event_processed}"
             EventStream(stream_id).process_batch(data_batch)
