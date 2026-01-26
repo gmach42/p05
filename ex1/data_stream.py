@@ -30,6 +30,7 @@ class DataStream(ABC):
             "Type": self.data_type,
             "data_batch": self.processed_data,
             "total_op": len(self.processed_data),
+            "analysis": "N/A",
         }
 
 
@@ -53,10 +54,13 @@ class SensorStream(DataStream):
     def __init__(self, stream_id):
         super().__init__(stream_id)
         self.data_type = "Environmental Data"
-        self.processed_data: Dict[str, float] = []
         self.registered_temps: List[float] = []
 
     def process_batch(self, data_batch: List[Dict] | Dict) -> str:
+        # Handle single dict input
+        if isinstance(data_batch, dict):
+            data_batch = [data_batch]
+
         for data in data_batch:
             if "temp" in data:
                 self.registered_temps.append(data["temp"])
@@ -95,7 +99,12 @@ class SensorStream(DataStream):
         return sum(self.registered_temps) / len(self.registered_temps)
 
     def get_stats(self) -> Dict[str, Union[str, int, float]]:
-        return super().get_stats(processed_data=self.temps)
+        res: Dict = super().get_stats()
+        sensor_analysis = {
+            "analysis": f"Sensor analysis: {len(self.processed_data)} readings processed, "
+            f"avg temp: {self.avg_temp():.1f}°C"
+        }
+        return res | sensor_analysis
 
 
 class TransactionStream(DataStream):
@@ -104,13 +113,12 @@ class TransactionStream(DataStream):
     def __init__(self, stream_id):
         super().__init__(stream_id)
         self.data_type = "Financial Data"
-        self.processed_operations = []
 
     def process_batch(self, data_batch: List[int]) -> str:
         for data in data_batch:
-            self.processed_operations.append(data)
+            self.processed_data.append(data)
         return (
-            f"Transaction analysis: {len(self.processed_operations)} "
+            f"Transaction analysis: {len(self.processed_data)} "
             f"operations processed, net flow: {self.netflow()}"
         )
 
@@ -121,10 +129,15 @@ class TransactionStream(DataStream):
         return [d for d in data_batch if abs(d) > 1000]
 
     def get_stats(self) -> Dict[str, Union[str, int, float]]:
-        return super().get_stats(processed_data=self.processed_operations)
+        res: Dict = super().get_stats()
+        transaction_analysis = {
+            "analysis": f"Transaction analysis: {len(self.processed_data)} "
+            f"operations, net flow: {self.netflow()} units"
+        }
+        return res | transaction_analysis
 
     def netflow(self) -> int:
-        return sum(self.processed_operations)
+        return sum(self.processed_data)
 
 
 class EventStream(DataStream):
@@ -133,16 +146,15 @@ class EventStream(DataStream):
     def __init__(self, stream_id):
         super().__init__(stream_id)
         self.data_type = "System Events"
-        self.events_processed = []
         self.errors = []
 
     def process_batch(self, data_batch: List[str]) -> str:
         for data in data_batch:
-            self.events_processed.append(data)
+            self.processed_data.append(data)
             if "error" in data.lower():
                 self.errors.append(data)
         return (
-            f"Event analysis: {len(self.events_processed)} events, "
+            f"Event analysis: {len(self.processed_data)} events, "
             f"{len(self.errors)} errors detected"
         )
 
@@ -153,13 +165,24 @@ class EventStream(DataStream):
         return [d for d in data_batch if "error" in d.lower()]
 
     def get_stats(self) -> Dict[str, Union[str, int, float]]:
-        return super().get_stats(processed_batch=self.events_processed)
+        res = super().get_stats()
+        event_analysis = {
+            "analysis": f"Event analysis: {len(self.processed_data)} events, "
+            f"{len(self.errors)} errors detected"
+        }
+        return res | event_analysis
 
 
 class StreamProcessor:
     """
     Dispatch the data batch into the different streams depending on the format
     """
+
+    def __init__(self):
+        self.sensor_streams = []
+        self.transaction_streams = []
+        self.event_streams = []
+
     def process_multiple_streams(self, data: List[Any]):
         for batch in data:
             self.process_any_stream(batch)
@@ -168,9 +191,9 @@ class StreamProcessor:
     def total_count(self) -> int:
         return sum(
             [
-                self.sensor_processed,
-                self.transaction_processed,
-                self.event_processed,
+                len(self.sensor_processed),
+                len(self.transaction_processed),
+                len(self.event_processed),
             ]
         )
 
@@ -188,26 +211,37 @@ class StreamProcessor:
             isinstance(data_batch, list)
             and all(isinstance(d, dict) for d in data_batch)
         ):
-            self.sensor_processed += 1
-            stream_id = f"SENSOR-{self.sensor_processed}"
-            SensorStream(stream_id).process_batch(data_batch)
+            stream_id = f"SENSOR-{len(self.sensor_streams) + 1:03d}"
+            stream = SensorStream(stream_id)
+            self.sensor_streams.append(stream)
 
         elif isinstance(data_batch, list) and all(
             isinstance(d, int) for d in data_batch
         ):
-            self.transaction_processed += 1
-            stream_id = f"TRANS-{self.transaction_processed}"
-            TransactionStream(stream_id).process_batch(data_batch)
+            stream_id = f"TRANS-{len(self.transaction_streams) + 1:03d}"
+            stream = TransactionStream(stream_id)
+            self.transaction_streams.append(stream)
 
         elif isinstance(data_batch, list) and all(
             isinstance(d, str) for d in data_batch
         ):
-            self.event_processed += 1
-            stream_id = f"EVENT-{self.event_processed}"
-            EventStream(stream_id).process_batch(data_batch)
+            stream_id = f"EVENT-{len(self.event_streams) + 1:03d}"
+            stream = EventStream(stream_id)
+            self.event_streams.append(stream)
 
         else:
             print(f"Unknown data format: {data_batch}")
+            return
+        # Process the batch with the appropriate stream (polymorphism)
+        stream.process_batch(data_batch)
+
+    def display_single_stream_stats(self, stream: DataStream) -> None:
+        stats = stream.get_stats()
+        print(
+            f"Stream ID: {stats['ID']}, Type: {stats['Type']}\n"
+            f"Total data points: {stats['total_op']}\n"
+            f"Analysis: {stats['analysis']}\n"
+        )
 
     def filtered_results(
         self, streams: DataStream, processed_data
