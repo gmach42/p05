@@ -7,7 +7,7 @@ class DataStream(ABC):
     Abstract base class for different types of data streams.
     """
 
-    def __init__(self, stream_id: str):
+    def __init__(self, stream_id: str) -> None:
         self.stream_id = stream_id
         self.data_type = "Generic Data"
         self.processed_data: List[Any] = []
@@ -55,7 +55,7 @@ class SensorStream(DataStream):
     - Entropy in J/(kg·K)
     """
 
-    def __init__(self, stream_id: str):
+    def __init__(self, stream_id: str) -> None:
         super().__init__(stream_id)
         self.data_type = "Environmental Data"
         self.registered_temps: List[float] = []
@@ -137,7 +137,7 @@ class SensorStream(DataStream):
 class TransactionStream(DataStream):
     """Process transactionnal data received as list[int]"""
 
-    def __init__(self, stream_id: str):
+    def __init__(self, stream_id: str) -> None:
         super().__init__(stream_id)
         self.data_type = "Financial Data"
         self.processed_data: List[int] = []
@@ -190,7 +190,7 @@ class TransactionStream(DataStream):
 class EventStream(DataStream):
     """Process events' data received as list[str]"""
 
-    def __init__(self, stream_id: str):
+    def __init__(self, stream_id: str) -> None:
         super().__init__(stream_id)
         self.data_type = "System Events"
         self.errors = []
@@ -238,7 +238,7 @@ class StreamProcessor:
     3. EventStream for list[str] data
     """
 
-    def __init__(self):
+    def __init__(self) -> None:
         self.sensor_streams = []
         self.transaction_streams = []
         self.event_streams = []

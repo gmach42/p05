@@ -1,26 +1,30 @@
 from abc import ABC, abstractmethod
-from typing import Any, Protocol, Union, List, Dict
+from typing import Any, Protocol, List, Dict
 import pandas as pd
 import json
 import time
 
 
 class ProcessingStage(Protocol):
-    def process(self, data: Any) -> Any: ...
+    """Protocol for processing stages"""
+    def process(self, data: Any) -> Any:
+        ...
 
 
 class ProcessingPipeline(ABC):
-    def __init__(self, pipeline_id: str):
+    """Abstract base class for processing pipelines"""
+
+    def __init__(self, pipeline_id: str) -> None:
         self.stages: List[ProcessingStage] = []
         self.pipeline_id: str = pipeline_id
         self.processed_count: int = 0
         self.total_time: float = 0.0
 
-    def add_stage(self, stage: ProcessingStage):
+    def add_stage(self, stage: ProcessingStage) -> None:
         self.stages.append(stage)
 
     @abstractmethod
-    def process(self, data) -> Any:
+    def process(self, data: Any) -> Any:
         pass
 
     def get_stats(self) -> dict:
@@ -65,10 +69,10 @@ class OutputStage:
 
 
 class JSONAdapter(ProcessingPipeline):
-    def __init__(self, pipeline_id):
+    def __init__(self, pipeline_id: str) -> None:
         super().__init__(pipeline_id)
 
-    def process(self, multi_data: Any) -> Union[str, Any]:
+    def process(self, data: Any) -> Any:
         """Process JSON data through pipeline stages"""
         print(
             f"\nProcessing JSON data through pipeline '{self.pipeline_id}'..."
@@ -77,23 +81,21 @@ class JSONAdapter(ProcessingPipeline):
 
         # Handle multiple JSON inputs
         try:
-            for data in multi_data["json"]:
+            for d in data["json"]:
                 if len(self.stages) != 3:
                     raise ValueError("JSON pipeline requires exactly 3 stages")
 
                 # Input stage
-                self.stages[0].process(data)
+                self.stages[0].process(d)
 
                 # Parse JSON string if needed
-                if isinstance(data, str):
-                    data = json.loads(data)
+                if isinstance(d, str):
+                    d = json.loads(d)
 
                 # Transform Stage (Metadata and validation)
-                result: dict = {
-                    data["sensor"]: str(data["value"]) + data["unit"]
-                }
+                result: dict = {d["sensor"]: str(d["value"]) + d["unit"]}
                 self.stages[1].process(result)
-                multi_data["json"] = [result]
+                data["json"] = [result]
 
                 # Output Stage
                 self.stages[2].process(
@@ -105,7 +107,7 @@ class JSONAdapter(ProcessingPipeline):
                 self.total_time += elapsed
                 self.processed_count += 1
 
-                return multi_data
+                return data
 
         except Exception as e:
             print(f"  ERROR: {e}")
@@ -114,10 +116,10 @@ class JSONAdapter(ProcessingPipeline):
 class CSVAdapter(ProcessingPipeline):
     """Handles CSV data format"""
 
-    def __init__(self, pipeline_id: str):
+    def __init__(self, pipeline_id: str) -> None:
         super().__init__(pipeline_id)
 
-    def process(self, multi_data: Any) -> Union[str, Any]:
+    def process(self, data: Any) -> Any:
         """Process CSV data through pipeline stages"""
         print(
             f"\nProcessing CSV data through pipeline '{self.pipeline_id}'..."
@@ -125,36 +127,36 @@ class CSVAdapter(ProcessingPipeline):
         start_time = time.time()
 
         try:
-            for data in multi_data["csv"]:
+            for d in data["csv"]:
                 if len(self.stages) != 3:
                     raise ValueError("CSV pipeline requires exactly 3 stages")
 
                 # Input stage
-                self.stages[0].process(data)
+                self.stages[0].process(d)
 
                 # Transform stage
-                if isinstance(data, str):
-                    parts = data.split(",")
-                    data = {
+                if isinstance(d, str):
+                    parts = d.split(",")
+                    d = {
                         "user": parts[0] if len(parts) > 0 else "",
                         "action": parts[1] if len(parts) > 1 else "",
                         "timestamp": parts[2] if len(parts) > 2 else "",
                     }
-                self.stages[1].process(data)
+                self.stages[1].process(d)
 
                 # Output stage
                 self.stages[2].process(
-                    f"{data['user'].capitalize()} activity logged: "
-                    f"{data['action']} at {data['timestamp']}"
+                    f"{d['user'].capitalize()} activity logged: "
+                    f"{d['action']} at {d['timestamp']}"
                 )
-                multi_data["csv"] = [data]
+                data["csv"] = [d]
 
                 # Update statistics
                 self.processed_count += 1
                 elapsed = time.time() - start_time
                 self.total_time += elapsed
 
-                return multi_data
+                return data
 
         except Exception as e:
             print(f"  ERROR: {e}")
@@ -163,10 +165,10 @@ class CSVAdapter(ProcessingPipeline):
 class StreamAdapter(ProcessingPipeline):
     """Handles streaming data"""
 
-    def __init__(self, pipeline_id: str):
+    def __init__(self, pipeline_id: str) -> None:
         super().__init__(pipeline_id)
 
-    def process(self, multi_data: Any) -> Union[str, Any]:
+    def process(self, data: Any) -> Any:
         """Process stream data through pipeline stages"""
         print(
             "\nProcessing Stream data through pipeline "
@@ -175,20 +177,20 @@ class StreamAdapter(ProcessingPipeline):
         start_time = time.time()
 
         try:
-            for data in multi_data["stream"]:
+            for d in data["stream"]:
                 if len(self.stages) != 3:
                     raise ValueError(
                         "Stream pipeline requires exactly 3 stages"
                     )
 
                 # Input stage
-                self.stages[0].process(data)
+                self.stages[0].process(d)
 
                 # If single reading, wrap in list
-                if isinstance(data, list):
-                    readings = data
+                if isinstance(d, list):
+                    readings = d
                 else:
-                    readings = [data]
+                    readings = [d]
 
                 # Transform stage
                 reading_count = 0
@@ -206,7 +208,7 @@ class StreamAdapter(ProcessingPipeline):
                 avg_temp = self.average_temperature(
                     [r["value"] for r in processed_readings]
                 )
-                multi_data["stream"] = result
+                data["stream"] = result
 
                 # Output stage
                 self.stages[2].process(
@@ -219,7 +221,7 @@ class StreamAdapter(ProcessingPipeline):
                 elapsed = time.time() - start_time
                 self.total_time += elapsed
 
-                return multi_data
+                return data
 
         except Exception as e:
             print(f"  ERROR: {e}")
@@ -235,17 +237,17 @@ class StreamAdapter(ProcessingPipeline):
 class NexusManager:
     """Orchestrates multiple pipelines"""
 
-    def __init__(self, capacity: int = 1000):
+    def __init__(self, capacity: int = 1000) -> None:
         self.pipelines: List[ProcessingPipeline] = []
         self.capacity: int = capacity
         self.total_time: float = 0.0
         self.processed_count: int = 0
 
-    def add_pipeline(self, pipeline: ProcessingPipeline):
+    def add_pipeline(self, pipeline: ProcessingPipeline) -> None:
         """Add a pipeline to manage"""
         self.pipelines.append(pipeline)
 
-    def process_data(self, data: Any):
+    def process_data(self, data: Any) -> List[Any]:
         """Run data through all pipelines"""
         results = []
         time_start = time.time()
@@ -257,7 +259,7 @@ class NexusManager:
         return results
 
 
-def demonstrate_error_recovery():
+def demonstrate_error_recovery() -> None:
     """Demonstrate error handling and recovery"""
     print("\n=== Error Recovery Test ===")
 
